@@ -5,7 +5,7 @@
 ## 本地补丁
 
 - `vendor/eframe`：基于 0.31.1，记录当前视口，避免 Windows WGL 在同一窗口重复切换上下文。启用 `wgpu` 的 DirectX 12 后端，供没有 OpenGL 2.0 的环境回退。
-- `vendor/imap`：基于 2.4.1，仅关闭 `nom` 默认功能并保留 `std`，移除邮件协议解析不需要的 `lexical-core` 浮点解析依赖。
+- `vendor/imap`：基于 2.4.1，仅关闭 `nom` 默认功能并保留 `std`，移除邮件协议解析不需要的 `lexical-core` 浮点解析依赖。服务器完成标签与当前命令不一致时返回错误，不再中止进程。
 
 ## 安全检查
 

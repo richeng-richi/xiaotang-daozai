@@ -3,6 +3,7 @@
 ## 未发布
 
 - 没有 OpenGL 2.0 时自动改用 DirectX 12 兼容渲染，避免在 ToDesk、GameViewer、ELINK 等虚拟显示器上一启动就退出。环境变量 `DAOZAI_RENDERER` 可设为 `glow`、`wgpu` 或 `auto`（默认 `auto`）。启动失败会写入 `%TEMP%\daozai-last-error.txt`。
+- 139 等邮箱返回无法对应的 IMAP 标签时，改为提示连接或同步失败，不再因此退出。中国移动 139 在登录前会像 163/126 一样发送客户端身份。
 
 ## v0.6.50
 

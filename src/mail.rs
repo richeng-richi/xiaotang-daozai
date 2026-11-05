@@ -153,6 +153,17 @@ impl Account {
         if user.is_empty() || user.len()>256 || user.chars().any(char::is_control){return Err("IMAP 用户名无效".into());}
         Ok((host,c.port,user.into()))
     }
+    /// 网易 163/126，以及中国移动 139（Coremail）在 LOGIN 前要发 RFC 2971 `ID`。
+    /// 自定义 IMAP 只看主机名，避免把身份命令发给 QQ、Gmail 等其它服务器。
+    pub fn needs_prelogin_id(&self) -> bool {
+        if self.provider.needs_id() {
+            return true;
+        }
+        match self.endpoint() {
+            Ok((host, _, _)) => host_needs_imap_id(&host),
+            Err(_) => false,
+        }
+    }
     /// Custom secrets are bound to the TLS endpoint and exact login identity.
     pub fn credential_key(&self)->String{
         if self.provider!=Provider::Custom{return key(self);}
@@ -164,6 +175,35 @@ impl Account {
 
 pub fn key(account: &Account) -> String {
     account.email.trim().to_ascii_lowercase()
+}
+
+fn host_needs_imap_id(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "139.com" || host.ends_with(".139.com")
+}
+
+/// 把 IMAP 错误收成界面上的一句话。不带服务器原文，避免把邮件或授权码写进提示。
+#[cfg(windows)]
+pub(crate) fn connection_failure(error: &imap::Error) -> String {
+    match error {
+        imap::Error::No(msg) | imap::Error::Bad(msg) => {
+            let lower = msg.to_ascii_lowercase();
+            if lower.contains("unsafe") {
+                "服务器要求先表明客户端身份".into()
+            } else if lower.contains("password")
+                || lower.contains("login")
+                || lower.contains("auth")
+                || lower.contains("认证")
+            {
+                "登录被拒绝，请检查用户名、授权码和管理员的 IMAP/认证策略（不支持 OAuth-only）".into()
+            } else {
+                "无法完成邮箱同步".into()
+            }
+        }
+        imap::Error::Io(_) | imap::Error::ConnectionLost => "网络连接中断，请重试".into(),
+        imap::Error::TagMismatch(_) | imap::Error::Parse(_) => "服务器返回了无法对应的响应".into(),
+        _ => "连接或同步失败，请稍后重试".into(),
+    }
 }
 
 fn accounts_path() -> std::path::PathBuf {
@@ -609,7 +649,7 @@ pub mod secrets {
 
 #[cfg(windows)]
 mod net {
-    //! TLS 连接 + 163/126 的 pre-login `ID` 握手。
+    //! TLS 连接 + 163/126/139 的 pre-login `ID` 握手。
     //!
     //! `imap` 2.4 只在已登录的 `Session` 上暴露 `run_command_and_check_ok`，
     //! 而网易要求 greeting → ID → LOGIN 的顺序，所以这里手工读问候、发 ID，
@@ -719,8 +759,9 @@ mod net {
             }
         }
 
-        // 2) 网易系：LOGIN 之前先发 ID（RFC 2971）
-        if account.provider.needs_id() {
+        // 2) 网易 163/126 与移动 139：LOGIN 之前先发 ID（RFC 2971）。
+        // `* ID` 不是本解析器认识的标准行，所以在交给 imap 客户端之前手工读完。
+        if account.needs_prelogin_id() {
             stream
                 .write_all(b"A0001 ID (\"name\" \"daozai\" \"version\" \"0.5.5\" \"vendor\" \"daozai\")\r\n")
                 .map_err(|e| format!("发送 ID 失败：{e}"))?;
@@ -730,7 +771,7 @@ mod net {
                 let mut line = Vec::new();
                 read_line(&mut stream, &mut line)?;
                 let text = String::from_utf8_lossy(&line).to_string();
-                if text.starts_with("A0001 ") {
+                if text.len() >= 6 && text.as_bytes()[..6].eq_ignore_ascii_case(b"A0001 ") {
                     ok = text.to_ascii_uppercase().contains(" OK");
                     break;
                 }
@@ -745,22 +786,14 @@ mod net {
         client.read_greeting().map_err(|e| format!("服务器问候异常：{e}"))?;
         let session = client
             .login(username, password)
-            .map_err(|(e, _)| login_error(e))?;
+            .map_err(|(e, _)| super::connection_failure(&e))?;
         Ok(session)
-    }
-
-    pub fn login_error(e: imap::Error) -> String {
-        match e {
-            imap::Error::No(_) | imap::Error::Bad(_) => "登录被拒绝，请检查用户名、授权码和管理员的 IMAP/认证策略（不支持 OAuth-only）".into(),
-            imap::Error::Io(_) => "登录时网络连接中断，请重试".into(),
-            _ => "IMAP 登录失败，请核对服务器及认证方式".into(),
-        }
     }
 
     /// 测试连接：连上、登录、选 INBOX，然后退出。
     pub fn probe(account: &Account, password: &str) -> Result<(), String> {
         let mut session = connect(account, password)?;
-        session.select("INBOX").map_err(|e| format!("无法打开收件箱：{e}"))?;
+        session.select("INBOX").map_err(|e| super::connection_failure(&e))?;
         let _ = session.logout();
         Ok(())
     }
@@ -853,6 +886,9 @@ mod service {
                         .name("daozai-mail-test".into())
                         .spawn(move || {
                             let result = net::probe(&account, &password);
+                            if let Err(ref message) = result {
+                                eprintln!("邮件测试连接失败：{message}");
+                            }
                             let _ = ev.send(Event::Test {
                                 account: account.email,
                                 ok: result.is_ok(),
@@ -942,10 +978,7 @@ mod service {
             let mut session = match net::connect(&account, &password) {
                 Ok(s) => s,
                 Err(e) => {
-                    let _ = ev.send(Event::Status {
-                        account: account.email.clone(),
-                        status: Status::Failed(e),
-                    });
+                    report_failure(&ev, &account.email, &e);
                     if sleep_stop(&stop, 30) {
                         return;
                     }
@@ -957,24 +990,36 @@ mod service {
                 account: account.email.clone(),
                 status: Status::Ready,
             });
-            if session.select("INBOX").is_err() {
-                let _ = ev.send(Event::Status {
-                    account: account.email.clone(),
-                    status: Status::Failed("无法打开收件箱".into()),
-                });
+            if let Err(error) = session.select("INBOX") {
+                report_failure(&ev, &account.email, &connection_failure(&error));
                 if sleep_stop(&stop, 30) {
                     return;
                 }
                 continue;
             }
             if first {
-                last_uid = recent(&mut session, &account, &ev).unwrap_or(0);
-                first = false;
+                match recent(&mut session, &account, &ev) {
+                    Ok(uid) => {
+                        last_uid = uid;
+                        first = false;
+                    }
+                    Err(()) => {
+                        report_failure(&ev, &account.email, "无法读取收件箱");
+                        if sleep_stop(&stop, 30) {
+                            return;
+                        }
+                        continue;
+                    }
+                }
             }
 
             let idle_supported=match session.capabilities() {
                 Ok(capabilities)=>capabilities.has_str("IDLE"),
-                Err(_)=>{if sleep_stop(&stop,10){return;}continue;},
+                Err(error)=>{
+                    report_failure(&ev, &account.email, &connection_failure(&error));
+                    if sleep_stop(&stop,10){return;}
+                    continue;
+                },
             };
             loop {
                 if stop.load(Ordering::Relaxed) {
@@ -1001,10 +1046,19 @@ mod service {
                     break;
                 }
             }
+            report_failure(&ev, &account.email, "同步中断，正在重试");
             if sleep_stop(&stop, 10) {
                 return;
             }
         }
+    }
+
+    fn report_failure(ev: &Sender<Event>, account: &str, message: &str) {
+        eprintln!("邮件监控：{message}");
+        let _ = ev.send(Event::Status {
+            account: account.to_string(),
+            status: Status::Failed(message.to_string()),
+        });
     }
 
     /// 首次连接：把最近 20 封读进面板，但不当作新邮件提示。
@@ -1218,6 +1272,26 @@ mod tests {
         assert_eq!(decode_accounts(&encode_accounts(&[gmail.clone()])),vec![gmail]);
         assert!(Provider::Mail163.needs_id() && Provider::Mail126.needs_id());
         assert!(!Provider::Qq.needs_id());
+        let mut mobile = Account {
+            custom: Some(CustomImap { host: "imap.139.com".into(), port: 993, username: String::new() }),
+            email: "user@139.com".into(),
+            provider: Provider::Custom,
+            enabled: true,
+        };
+        assert!(mobile.needs_prelogin_id());
+        mobile.custom.as_mut().unwrap().host = "IMAP.139.COM".into();
+        assert!(mobile.needs_prelogin_id());
+        mobile.custom.as_mut().unwrap().host = "imap.example.edu".into();
+        assert!(!mobile.needs_prelogin_id());
+        assert!(Account { custom: None, email: "a@163.com".into(), provider: Provider::Mail163, enabled: true }.needs_prelogin_id());
+        assert!(!Account { custom: None, email: "a@qq.com".into(), provider: Provider::Qq, enabled: true }.needs_prelogin_id());
+        #[cfg(windows)]
+        {
+            let mismatch = imap::Error::TagMismatch(imap::error::TagMismatch { expected: "a1".into(), actual: "b9".into() });
+            let text = connection_failure(&mismatch);
+            assert!(text.contains("无法对应"));
+            assert!(!text.contains("岛仔发生异常"));
+        }
         assert_eq!(Provider::parse("exmail").host(), "imap.exmail.qq.com");
     }
 

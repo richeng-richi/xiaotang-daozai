@@ -43,8 +43,22 @@ pub enum Error {
     Validate(ValidateError),
     /// Error appending an e-mail.
     Append,
+    /// The server finished a command with a tag that is not the one in flight.
+    ///
+    /// This used to abort the process. Servers such as Coremail can emit a tagged
+    /// completion the client did not just send; that must stay a normal error.
+    TagMismatch(TagMismatch),
     #[doc(hidden)]
     __Nonexhaustive,
+}
+
+/// A tagged completion whose tag does not belong to the outstanding command.
+#[derive(Debug)]
+pub struct TagMismatch {
+    /// Tag the client was waiting for.
+    pub expected: String,
+    /// Tag the server actually sent, truncated to a short token.
+    pub actual: String,
 }
 
 impl From<IoError> for Error {
@@ -99,6 +113,11 @@ impl fmt::Display for Error {
             Error::Bad(ref data) => write!(f, "Bad Response: {}", data),
             Error::ConnectionLost => f.write_str("Connection Lost"),
             Error::Append => f.write_str("Could not append mail to mailbox"),
+            Error::TagMismatch(ref mismatch) => write!(
+                f,
+                "IMAP tag mismatch: expected {}, got {}",
+                mismatch.expected, mismatch.actual
+            ),
             Error::__Nonexhaustive => f.write_str("Unknown"),
         }
     }
@@ -119,6 +138,7 @@ impl StdError for Error {
             Error::No(_) => "No Response",
             Error::ConnectionLost => "Connection lost",
             Error::Append => "Could not append mail to mailbox",
+            Error::TagMismatch(_) => "IMAP tag mismatch",
             Error::__Nonexhaustive => "Unknown",
         }
     }

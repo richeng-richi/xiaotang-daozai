@@ -2,7 +2,7 @@
 //! 2177](https://tools.ietf.org/html/rfc2177).
 
 use crate::client::Session;
-use crate::error::{Error, Result};
+use crate::error::{Error, ParseError, Result};
 #[cfg(feature = "tls")]
 use native_tls::TlsStream;
 use std::io::{self, Read, Write};
@@ -83,8 +83,10 @@ impl<'a, T: Read + Write + 'a> Handle<'a, T> {
         }
 
         self.session.read_response_onto(&mut v)?;
-        // We should *only* get a continuation on an error (i.e., it gives BAD or NO).
-        unreachable!();
+        // A tagged OK/NO/BAD without the `+` continuation is an IMAP error, not a process abort.
+        Err(Error::Parse(ParseError::Unexpected(
+            "IDLE response was not a continuation".into(),
+        )))
     }
 
     fn terminate(&mut self) -> Result<()> {
