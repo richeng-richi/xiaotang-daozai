@@ -33,7 +33,7 @@ fn main()->eframe::Result<()> {
         }
     }
     std::env::set_var("DAOZAI_DATA_DIR",std::env::temp_dir().join(format!("daozai-render-soak-{}",std::process::id())));
-    let options=eframe::NativeOptions{vsync:false,viewport:egui::ViewportBuilder::default().with_title("岛仔性能检查").with_inner_size([daozai::app::CANVAS_W,WIN_H]).with_position([100.0,100.0]).with_decorations(false).with_transparent(true).with_active(false),..Default::default()};
+    let options=eframe::NativeOptions{renderer:eframe::Renderer::Glow,vsync:false,viewport:egui::ViewportBuilder::default().with_title("岛仔性能检查").with_inner_size([daozai::app::CANVAS_W,WIN_H]).with_position([100.0,100.0]).with_decorations(false).with_transparent(true).with_active(false),..Default::default()};
     eframe::run_native("岛仔性能检查",options,Box::new(|cc|{
         cc.egui_ctx.set_pixels_per_point(1.0);
         if let Some(gl)=&cc.gl{use eframe::glow::HasContext;println!("renderer={}",unsafe{gl.get_parameter_string(eframe::glow::RENDERER)});}

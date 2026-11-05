@@ -62,6 +62,8 @@ Grok Bot、Gemini 提供各自的连接入口；会话过期时重新连接。�
 
 **窗口没有出现：** 检查托盘是否已有实例、是否在全屏应用中、设置是否启用了全屏隐藏。
 
+**一打开就退出：** 虚拟显示器（ToDesk、GameViewer、ELINK 等）经常只有微软自带的 OpenGL 1.1。岛仔会先试 OpenGL，失败后自动改用 DirectX 12。仍失败时查看 `%TEMP%\daozai-last-error.txt`。环境变量 `DAOZAI_RENDERER` 可设为 `glow`（只用 OpenGL）、`wgpu`（只用兼容渲染）或 `auto`（默认，先 OpenGL 再 DirectX）。高级用户还可以用 `WGPU_BACKEND` 指定 wgpu 后端；未设置时 Windows 只用 DirectX 12。兼容渲染下无边框、置顶和点击穿透仍然有效。若圆角外出现底色，打开「设置 → 常规」，会看到兼容渲染模式说明。
+
 **邮箱登录失败：** 确认填的是授权码／App 专用密码、IMAP 已启用、账号没有被管理员限制。
 
 **日程连接成功但没有安排：** 手动同步所选月份，确认平台授权的日历包含该日程；出现错误时保留错误文字即可，不要提供密码。

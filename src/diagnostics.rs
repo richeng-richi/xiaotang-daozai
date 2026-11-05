@@ -21,8 +21,61 @@ fn message(directory: &Path, title: &str, details: &str) -> String {
     }
 }
 
+pub fn failure_log_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("daozai-last-error.txt")
+}
+
+pub fn failure_text(title: &str, details: &str) -> String {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    format!(
+        "\u{feff}岛仔 {}\n系统：{} / {}\n时间（Unix 秒）：{timestamp}\n{title}\n{details}\n",
+        env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH,
+    )
+}
+
+pub fn write_failure_at(path: &Path, title: &str, details: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, failure_text(title, details))
+}
+
+/// 无控制台的 Windows 程序退出前把错误留在临时目录，并尽量写到父控制台。
+pub fn record_failure(title: &str, details: &str) -> PathBuf {
+    let path = failure_log_path();
+    if let Err(error) = write_failure_at(&path, title, details) {
+        note(&format!("{title}\n{details}\n临时日志无法保存：{error}"));
+    } else {
+        note(&format!("{title}\n{details}\n临时日志：{}", path.display()));
+    }
+    path
+}
+
+pub fn clear_recorded_failure() {
+    let _ = std::fs::remove_file(failure_log_path());
+}
+
+pub fn note(text: &str) {
+    eprintln!("{text}");
+    #[cfg(windows)]
+    write_parent_console(text);
+}
+
+#[cfg(windows)]
+fn write_parent_console(text: &str) {
+    use std::io::Write;
+    use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    unsafe { let _ = AttachConsole(ATTACH_PARENT_PROCESS); }
+    if let Ok(mut console) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
+        let _ = writeln!(console, "{text}");
+    }
+}
+
 pub fn report(title: &str, details: &str) {
-    let text = message(&daozai::model::config_dir().join("diagnostics"), title, details);
+    let temp = record_failure(title, details);
+    let mut text = message(&daozai::model::config_dir().join("diagnostics"), title, details);
+    text.push_str(&format!("\n\n若找不到上面的文件，请改看：\n{}", temp.display()));
     #[cfg(windows)]
     {
         use windows::core::{w, PCWSTR};
@@ -45,12 +98,42 @@ pub fn startup(stage:&str) {
 
 /// 记录实际使用的图形设备，避免把电脑里的显卡列表误当作当前渲染设备。
 pub fn graphics(cc:&eframe::CreationContext<'_>) {
-    use eframe::glow::HasContext;
-    let Some(gl)=&cc.gl else{return;};
-    let details=unsafe{format!("厂商：{}\n渲染器：{}\nOpenGL：{}\n",
-        gl.get_parameter_string(eframe::glow::VENDOR),gl.get_parameter_string(eframe::glow::RENDERER),gl.get_parameter_string(eframe::glow::VERSION))};
+    let active = describe_graphics(cc);
     let directory=daozai::model::config_dir().join("diagnostics");
-    if std::fs::create_dir_all(&directory).is_ok(){let _=std::fs::write(directory.join("last-graphics.log"),details);}
+    if std::fs::create_dir_all(&directory).is_ok(){let _=std::fs::write(directory.join("last-graphics.log"),&active.detail);}
+    let name = active.name;
+    daozai::render_mode::set_active(active);
+    if cc.gl.is_some() || cc.wgpu_render_state.is_some() {
+        clear_recorded_failure();
+    }
+    startup(&format!("图形设备就绪：{name}"));
+}
+
+fn describe_graphics(cc:&eframe::CreationContext<'_>) -> daozai::render_mode::ActiveRender {
+    if let Some(gl)=&cc.gl {
+        use eframe::glow::HasContext;
+        let detail=unsafe{format!("后端：glow\n厂商：{}\n渲染器：{}\nOpenGL：{}\n",
+            gl.get_parameter_string(eframe::glow::VENDOR),gl.get_parameter_string(eframe::glow::RENDERER),gl.get_parameter_string(eframe::glow::VERSION))};
+        return daozai::render_mode::ActiveRender { name: "glow", detail, transparent: Some(true) };
+    }
+    if let Some(state)=&cc.wgpu_render_state {
+        let info=state.adapter.get_info();
+        let detail=format!(
+            "后端：wgpu / {:?}\n设备：{}\n类型：{:?}\n驱动：{} {}\n透明合成：{}\n",
+            info.backend, info.name, info.device_type, info.driver, info.driver_info,
+            match daozai::render_mode::noted_transparency() {
+                Some(true) => "支持",
+                Some(false) => "不支持",
+                None => "未知",
+            },
+        );
+        return daozai::render_mode::ActiveRender {
+            name: "wgpu",
+            detail,
+            transparent: daozai::render_mode::noted_transparency(),
+        };
+    }
+    daozai::render_mode::ActiveRender { name: "unknown", detail: "未获得图形设备\n".into(), transparent: None }
 }
 
 pub fn install() {
@@ -96,5 +179,17 @@ mod tests {
         assert!(text.contains("OpenGL 初始化失败"));
         assert!(text.contains("日志无法保存"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn temp_failure_file_keeps_the_opengl_error_readable() {
+        let path = directory("temp-error").join("daozai-last-error.txt");
+        write_failure_at(&path, "OpenGL 不可用，正在尝试兼容渲染（DirectX / wgpu）。", "egui_glow requires opengl 2.0+").unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with('\u{feff}'));
+        assert!(content.contains("egui_glow requires opengl 2.0+"));
+        assert!(content.contains(env!("CARGO_PKG_VERSION")));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
     }
 }

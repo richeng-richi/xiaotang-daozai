@@ -1,5 +1,9 @@
 # 更新记录
 
+## 未发布
+
+- 没有 OpenGL 2.0 时自动改用 DirectX 12 兼容渲染，避免在 ToDesk、GameViewer、ELINK 等虚拟显示器上一启动就退出。环境变量 `DAOZAI_RENDERER` 可设为 `glow`、`wgpu` 或 `auto`（默认 `auto`）。启动失败会写入 `%TEMP%\daozai-last-error.txt`。
+
 ## v0.6.50
 
 - 更新下载自动读取系统代理；直连或下载失败时及时提示，避免长时间停在 0%。更新窗口新增飞书备用下载入口。

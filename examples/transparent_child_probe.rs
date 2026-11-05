@@ -33,7 +33,7 @@ fn main()->eframe::Result<()> {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
     }
-    eframe::run_native("子窗口合成检查",eframe::NativeOptions{viewport:egui::ViewportBuilder::default().with_inner_size([1.0,1.0]).with_position([-1000.0,-1000.0]).with_active(false),..Default::default()},Box::new(|_|Ok(Box::new(Probe{back:HWND::default(),start:std::time::Instant::now(),checked:false}))))
+    eframe::run_native("子窗口合成检查",eframe::NativeOptions{renderer:eframe::Renderer::Glow,viewport:egui::ViewportBuilder::default().with_inner_size([1.0,1.0]).with_position([-1000.0,-1000.0]).with_active(false),..Default::default()},Box::new(|_|Ok(Box::new(Probe{back:HWND::default(),start:std::time::Instant::now(),checked:false}))))
 }
 #[cfg(not(windows))]
 fn main(){}

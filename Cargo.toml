@@ -30,7 +30,7 @@ imap-proto = { path = "vendor/imap-proto" }
 eframe = { path = "vendor/eframe" }
 
 [dependencies]
-eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "wgpu"] }
 egui_extras = { version = "0.31", default-features = false, features = ["svg"] }
 ureq = { version = "2.12", default-features = false, features = ["tls", "gzip"] }
 serde_json = "1"
@@ -49,7 +49,7 @@ rrule = "0.14.0"
 
 # Linux 下 winit 至少要一个后端才能编译（只用于开发/录制，正式目标是 Windows）。
 [target.'cfg(target_os = "linux")'.dependencies]
-eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "wgpu", "x11"] }
 
 [target.'cfg(windows)'.dependencies]
 memmap2 = "0.9.12"
@@ -59,6 +59,7 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Dwm",
   "Win32_System_LibraryLoader",
   "Win32_System_Com",
+  "Win32_System_Console",
   "Win32_System_DataExchange",
   "Win32_Security",
   "Win32_Security_Cryptography",
