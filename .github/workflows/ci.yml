@@ -4,6 +4,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  actions: write
 jobs:
   test:
     runs-on: windows-latest
@@ -34,6 +35,21 @@ jobs:
         run: |
           $compiler = ./scripts/get-nsis.ps1 -Directory $env:RUNNER_TEMP
           ./scripts/package.ps1 -SkipBuild -NsisCompiler $compiler
+      - name: 上传 Windows 可执行文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: daozai-windows-x64
+          path: target/x86_64-pc-windows-msvc/release/daozai.exe
+          if-no-files-found: error
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: daozai-setup
+          path: |
+            dist/Daozai-Setup-*.exe
+            dist/Daozai-v*-windows-x64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
   installer:
     runs-on: windows-latest
     steps:
