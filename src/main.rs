@@ -8,6 +8,7 @@ use daozai::poll_clock::PollClock;
 use std::time::{Duration, Instant};
 
 mod diagnostics;
+mod launch;
 
 struct Shell {
     app: App,
@@ -545,13 +546,17 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            diagnostics::report("岛仔启动或运行失败。", &error.to_string());
+            diagnostics::report("岛仔启动或运行失败。", &error);
             std::process::ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> eframe::Result<()> {
+fn create_shell(cc: &eframe::CreationContext<'_>) -> Box<dyn eframe::App> {
+    Box::new(Shell::new(cc))
+}
+
+fn run() -> Result<(), String> {
     // 单实例（与原版同名互斥体）
     #[cfg(windows)]
     if !daozai::tray::single_instance() {
@@ -560,17 +565,5 @@ fn run() -> eframe::Result<()> {
         }
         return Ok(());
     }
-    diagnostics::startup("初始化图形窗口");
-    let viewport = egui::ViewportBuilder::default()
-        .with_title("岛仔").with_icon(daozai::theme::app_icon())
-        .with_inner_size([app::CANVAS_W, app::WIN_H])
-        .with_decorations(false)
-        .with_transparent(true)
-        .with_active(false)
-        .with_resizable(false)
-        .with_taskbar(false)
-        .with_always_on_top()
-        .with_visible(false);
-    let opts = eframe::NativeOptions { viewport, vsync: !cfg!(windows), ..Default::default() };
-    eframe::run_native("岛仔", opts, Box::new(|cc| Ok(Box::new(Shell::new(cc)))))
+    launch::run_app(create_shell)
 }

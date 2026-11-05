@@ -255,8 +255,12 @@ optional = true
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.wgpu]
 version = "24.0.0"
 features = [
+    # Windows 虚拟显示器往往只有 OpenGL 1.1，兼容路径需要 DirectX 12。
+    # Vulkan / GLES 在 wgpu 24 的桌面目标上总会编进来；运行时由岛仔优先选择 DX12。
+    "dx12",
     "metal",
     "webgpu",
+    "wgsl",
 ]
 optional = true
 default-features = false

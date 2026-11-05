@@ -553,6 +553,21 @@ impl App {
         match ev {
             mail::Event::Status { account, status } => {
                 if !watching(&account){return;}
+                match &status {
+                    mail::Status::Failed(_) | mail::Status::Auth(_) => {
+                        self.mail.note = format!("{account}：{}", status.label());
+                    }
+                    mail::Status::Ready
+                        if self
+                            .mail
+                            .note
+                            .to_ascii_lowercase()
+                            .starts_with(&format!("{}：", account.to_ascii_lowercase())) =>
+                    {
+                        self.mail.note = format!("{account}：已连接");
+                    }
+                    _ => {}
+                }
                 self.mail.status.insert(account.to_ascii_lowercase(), status);
             }
             mail::Event::Mail { item, new } => {

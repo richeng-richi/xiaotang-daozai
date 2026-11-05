@@ -206,8 +206,9 @@ pub fn parse_mailbox(
 
                 if let imap_proto::Status::Ok = status {
                 } else {
-                    // how can this happen for a Response::Data?
-                    unreachable!();
+                    return Err(Error::Parse(ParseError::Unexpected(
+                        "mailbox status was not OK".into(),
+                    )));
                 }
 
                 use imap_proto::ResponseCode;

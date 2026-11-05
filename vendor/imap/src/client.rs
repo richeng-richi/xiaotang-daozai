@@ -12,7 +12,7 @@ use std::str;
 use std::sync::mpsc;
 
 use super::authenticator::Authenticator;
-use super::error::{Error, ParseError, Result, ValidateError};
+use super::error::{Error, ParseError, Result, TagMismatch, ValidateError};
 use super::extensions;
 use super::parse::*;
 use super::types::*;
@@ -1304,6 +1304,13 @@ impl<T: Read + Write> Session<T> {
     }
 }
 
+fn tag_token(raw: &str) -> String {
+    raw.chars()
+        .take(32)
+        .map(|c| if c.is_ascii_graphic() { c } else { '?' })
+        .collect()
+}
+
 impl<T: Read + Write> Connection<T> {
     /// Read the greeting from the connection. Needs to be done after `connect`ing.
     ///
@@ -1366,7 +1373,14 @@ impl<T: Read + Write> Connection<T> {
                             ..
                         },
                     )) => {
-                        assert_eq!(tag.as_bytes(), match_tag.as_bytes());
+                        // One command is in flight. Accept an ASCII-case echo of its tag.
+                        // Any other tag is a server quirk, not a reason to abort the process.
+                        if !tag.as_bytes().eq_ignore_ascii_case(match_tag.as_bytes()) {
+                            return Err(Error::TagMismatch(TagMismatch {
+                                expected: match_tag,
+                                actual: tag_token(&tag.0),
+                            }));
+                        }
                         Some(match status {
                             Status::Bad | Status::No => {
                                 Err((status, information.map(ToString::to_string)))
@@ -1462,6 +1476,26 @@ mod tests {
         let mut client = Client::new(mock_stream);
         let actual_response = client.read_response().unwrap();
         assert_eq!(Vec::<u8>::new(), actual_response);
+    }
+
+    #[test]
+    fn mismatched_done_tag_is_an_error() {
+        let mock_stream = MockStream::new(b"b9 OK Logged in.\r\n".to_vec());
+        let mut client = Client::new(mock_stream);
+        match client.read_response() {
+            Err(Error::TagMismatch(mismatch)) => {
+                assert_eq!(mismatch.expected, "a0");
+                assert_eq!(mismatch.actual, "b9");
+            }
+            other => panic!("tag mismatch must be an error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn done_tag_case_still_completes_the_command() {
+        let mock_stream = MockStream::new(b"A0 OK Logged in.\r\n".to_vec());
+        let mut client = Client::new(mock_stream);
+        client.read_response().expect("ASCII-case echo of the in-flight tag");
     }
 
     #[test]

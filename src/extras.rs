@@ -1046,6 +1046,10 @@ impl App {
                                 }).response
                             });
                             ui.label(egui::RichText::new(if !self.settings.display_id.is_empty()&&selected.is_none(){"暂时显示在主屏，重新连接所选屏幕后自动恢复。"}else{"显示在所选屏幕顶部中央；断开时暂时回到主屏。"}).size(11.0).color(ui.visuals().weak_text_color()));
+                            if let Some(hint)=crate::render_mode::settings_hint() {
+                                ui.separator();
+                                ui.label(egui::RichText::new(hint).size(11.0).color(settings_color(ctx,Color32::from_gray(180),Color32::from_gray(75))));
+                            }
                             ui.separator();
                             ui.horizontal(|ui|{
                                 ui.add_sized([56.0,30.0],egui::Label::new("时间制式"));

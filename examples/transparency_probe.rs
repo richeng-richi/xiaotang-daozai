@@ -49,7 +49,7 @@ fn main()->eframe::Result<()> {
         }
     }
     let hidden_start=std::env::args().any(|arg|arg=="--hidden-start");
-    let opts=eframe::NativeOptions{viewport:egui::ViewportBuilder::default().with_title("岛仔透明合成回归检查").with_inner_size([320.0,160.0]).with_position([100.0,100.0]).with_decorations(false).with_transparent(std::env::args().any(|arg|arg=="--transparent")).with_visible(!hidden_start).with_active(false),..Default::default()};
+    let opts=eframe::NativeOptions{renderer:eframe::Renderer::Glow,viewport:egui::ViewportBuilder::default().with_title("岛仔透明合成回归检查").with_inner_size([320.0,160.0]).with_position([100.0,100.0]).with_decorations(false).with_transparent(std::env::args().any(|arg|arg=="--transparent")).with_visible(!hidden_start).with_active(false),..Default::default()};
     eframe::run_native("透明合成回归检查",opts,Box::new(move |cc|{
         cc.egui_ctx.set_pixels_per_point(1.0);
         let RawWindowHandle::Win32(raw)=cc.window_handle().unwrap().as_raw() else {unreachable!()};

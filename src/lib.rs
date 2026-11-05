@@ -23,6 +23,7 @@ pub mod mail;
 mod mail_reader;
 mod task_picker;
 pub mod model;
+pub mod render_mode;
 pub mod otp;
 pub mod quota;
 mod quota_ui;

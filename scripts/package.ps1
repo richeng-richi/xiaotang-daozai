@@ -6,6 +6,7 @@ try {
     $version = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version = "([^"]+)"').Groups[1].Value
     if (-not $SkipBuild) {
         $env:CARGO_BUILD_JOBS = '1'
+        # eframe 同时启用 glow 与 wgpu（Windows 上含 DirectX 12）。保持这条构建命令，不要改成只编译 glow。
         cargo +stable-x86_64-pc-windows-msvc build --locked --release --bin daozai --target x86_64-pc-windows-msvc
         if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
     }
